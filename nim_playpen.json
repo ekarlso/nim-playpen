@@ -1,0 +1,9 @@
+{
+    "port": 8080,
+    "runBasePath": "/tmp",
+    "versionsPath": "/home/vagrant/versions/",
+    "playpenPath": "~/playpen/playpen",
+    "versions": [
+        "0.10.2"
+    ]
+}
