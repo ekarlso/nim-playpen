@@ -38,19 +38,9 @@ proc newRun(): Run =
 
 proc toRun*(node: JsonNode): Run =
   result = newRun()
-  echo ($node)
 
   result.input = node["input"].str
   result.version = node["version"].str
-
-proc writeInput(runFile: string, input: seq[string]) =
-  var handle = open(runFile, fmWrite)
-  handle.writeLn("proc eval(): auto =")
-  for line in input:
-    handle.writeln(" " & line)
-    handle.writeln("when compiles(echo eval()): echo eval()")
-    handle.writeln("else: eval()")
-    close(handle)
 
 proc execRun*(run: var Run, playPath: string, versionsPath: string) =
   let
@@ -65,10 +55,11 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
   createDir(path)
 
   echo "Writing snippet"
-  writeInput(joinPath(chrootPath, runFile), run.input.split("\n"))
+  writeFile(joinPath(chrootPath, runFile), run.input)
   echo("Snippet written to: " & runFile)
 
   var args = @[
+    "/usr/local/bin/eval.sh",
     nimPath,
     "--nimcache:/tmp",
     #"--out:" & joinPath(runDir, "program"),
