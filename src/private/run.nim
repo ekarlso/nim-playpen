@@ -59,10 +59,9 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
   echo("Snippet written to: " & runFile)
 
   var args = @[
-    "/usr/local/bin/eval.sh",
     nimPath,
-    "--nimcache:/tmp",
-    #"--out:" & joinPath(runDir, "program"),
+    "--nimcache:/tmp", # Same as below
+    "-o:/tmp/program", # Store in /tmp since it's in-memory mount by playpen
     "--stackTrace:off",
     "--lineTrace:off",
     "--threads:off",
@@ -80,7 +79,7 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
     "--hints:off",
     "--threadanalysis:off",
     "--verbosity:0",
-    "--cc:ucc",
+    #"--cc:ucc",
     "compile",
     "--run",
     runFile
