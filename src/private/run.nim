@@ -79,15 +79,20 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
     "--hints:off",
     "--threadanalysis:off",
     "--verbosity:0",
-    #"--cc:ucc",
+    "--cc:tcc",
     "compile",
     "--run",
     runFile
   ]
 
+
   let
     (output, code) = runInPen(playPath, chrootPath, cmd = args)
 
-  run.output = output
-  if code.int != 0:
+  if output.len > 1000:
     run.result = Error
+    run.output = "Output too long..."
+  else:
+    run.output = output
+    if code.int != 0:
+      run.result = Error

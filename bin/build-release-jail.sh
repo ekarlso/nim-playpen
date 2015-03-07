@@ -22,18 +22,23 @@ rpm -r=$WORKSPACE --initdb
 yumdownloader --destdir=/tmp fedora-repos fedora-release
 sudo rpm --root $WORKSPACE -ivh /tmp/fedora-release*rpm /tmp/fedora-repos*rpm
 
+# NOTE from def-: use tinycc / tcc for faster compilations
+sudo wget https://copr.fedoraproject.org/coprs/lantw44/tcc/repo/fedora-21/lantw44-tcc-fedora-21.repo -O $WORKSPACE/etc/yum.repos.d/tinycc.repo
+
 sudo yum --installroot=$WORKSPACE -y install \
     coreutils \
     shadow-utils \
     procps-ng \
     util-linux \
     filesystem \
-    grep
+    grep \
 
 sudo yum --installroot=$WORKSPACE -y install \
     gcc \
     glibc-devel \
-    git
+    git \
+    tcc
+
 
 sudo mkdir $WORKSPACE/dev/shm
 sudo rm $WORKSPACE/dev/null
