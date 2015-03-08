@@ -13,16 +13,27 @@ type
     output*: string
     result*: RunResult
     version*: string
+    compilerOptions: JsonNode
     snippetDir: string
+
+var defaultOpts = %{
+  "threads": %false,
+  "stackTrace": %false,
+  "checks": %true
+}
 
 proc `%`*(runResult: RunResult): JsonNode =
   %($runResult)
 
+
 proc `%`*(run: Run): JsonNode =
   result = %{
+    "id": %run.id,
     "input": %run.input,
-    "result": %run.result
+    "result": %run.result,
+    "compilerOptions": run.compilerOptions
   }
+
   if run.output != nil:
     result["output"] = %run.output
   else:
@@ -41,6 +52,30 @@ proc toRun*(node: JsonNode): Run =
 
   result.input = node["input"].str
   result.version = node["version"].str
+  if node.hasKey("compilerOptions"):
+    result.compilerOptions = node["compilerOptions"]
+  else:
+    result.compilerOptions = newJObject()
+
+proc toArgs*(compilerOptions: JsonNode): seq[string] =
+  var opts = if compilerOptions != nil: compilerOptions else: newJObject()
+
+  echo opts
+
+  for k, v in defaultOpts:
+    if not opts.hasKey(k):
+      opts[k] = defaultOpts[k]
+
+  result = newSeq[string]()
+  for k, v in opts:
+    var asString: string
+    case v.kind:
+      of JBool:
+        asString = if v.bval == true: "on" else: "off"
+      else:
+        asString = v.str
+
+    result.add("--$#:$#" % [k, asString])
 
 proc execRun*(run: var Run, playPath: string, versionsPath: string) =
   let
@@ -62,10 +97,7 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
     nimPath,
     "--nimcache:/tmp", # Same as below
     "-o:/tmp/program", # Store in /tmp since it's in-memory mount by playpen
-    "--stackTrace:off",
     "--lineTrace:off",
-    "--threads:off",
-    "--checks:off",
     "--fieldChecks:off",
     "--rangeChecks:on",
     "--boundChecks:on",
@@ -79,12 +111,19 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
     "--hints:off",
     "--threadanalysis:off",
     "--verbosity:0",
-    "--cc:tcc",
+    #"--cc:ucc",
+  ]
+
+  let opts = run.compilerOptions.toArgs
+  echo "Compiler options for " & run.id & ": " & $opts
+
+  args.add(opts)
+
+  args.add(@[
     "compile",
     "--run",
     runFile
-  ]
-
+  ])
 
   let
     (output, code) = runInPen(playPath, chrootPath, cmd = args)
