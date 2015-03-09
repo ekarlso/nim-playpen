@@ -37,7 +37,3 @@ source ~/.bashrc
 git clone https://github.com/ekarlso/nim-uuid/
 cd nim-uuid
 nimble install -y
-
-# Install nim_playpen
-cd $DIR/..
-nimble install -y
