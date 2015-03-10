@@ -2,36 +2,10 @@
 # vi: set ft=ruby :
 
 $script = <<SCRIPT
-sudo yum install -y
-    git \
-    gcc \
-    make \
-    wget \
-    clang \
-    glib2-devel \
-    glibc-devel \
-    libseccomp-devel \
-    systemd-devel
-
-sudo wget https://raw.githubusercontent.com/ekarlso/nim-vm/master/bin/nim-vm -O /bin/nim-vm
-sudo chmod +x /bin/nim-vm
-sudo nim-vm -d /opt/nim -b /bin install devel
-sudo nim-vm -d /opt/nim -b /bin use devel
-sudo chmod +x /bin/nim
-
-[ ! -d "nimble" ] && git clone https://github.com/nim-lang/nimble
-cd nimble
-nim c -r src/nimble install
-SRCSTRING='export PATH=$PATH:$HOME/.nimble/bin'
-[ ! -z "$(grep -q "$SRCSTRING" $HOME/.bashrc)" ] && echo "$SRCSTRING" >> $HOME/.bashrc
-source ~/.bashrc
+bash /opt/play/bin/bootstrap.sh
 
 sudo firewall-cmd --zone=public --add-port=8080/tcp --permanent
 sudo firewall-cmd --reload
-
-cd /opt/play
-#nimble install -y
-#nim c src/nim_play.nim
 SCRIPT
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
