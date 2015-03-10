@@ -58,7 +58,7 @@ routes:
 
         var snippetRun = node.toRun
 
-        execRun(snippetRun, cfg["playpenPath"].str, cfg["versionsPath"].str)
+        await execute(snippetRun, cfg["playpenPath"].str, cfg["versionsPath"].str)
 
         let runJson = %snippetRun
         resp(Http200, $runJson)
