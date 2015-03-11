@@ -19,13 +19,6 @@ type
 
   InvalidRun = object of Exception
 
-var defaultOpts = %{
-  "threads": %false,
-  "stackTrace": %false,
-  "checks": %true
-}
-
-
 var executor = newAsyncExecutor()
 
 
@@ -91,63 +84,6 @@ proc playpenCmd(binPath: string, chrootPath: string): seq[string] =
     "--"
   ]
 
-proc execRun*(run: var Run, playPath: string, versionsPath: string) =
-  let
-    chrootPath = joinPath(versionsPath, run.version)
-    runDir = joinPath("/", "mnt", "runs", run.id.replace("-", "_"))
-    runFile = joinPath(runDir, "file.nim")
-    nimPath = joinPath("/usr/local/nim/versions", run.version, "bin", "nim")
-
-  echo "chroot " & chrootPath
-  let path = joinPath(chrootPath, runDir)
-  echo ("Creating directory: " & path)
-  createDir(path)
-
-  echo "Writing snippet"
-  writeFile(joinPath(chrootPath, runFile), run.input)
-  echo("Snippet written to: " & runFile)
-
-  var args = @[
-    nimPath,
-    "--nimcache:/tmp", # Same as below
-    "-o:/tmp/program", # Store in /tmp since it's in-memory mount by playpen
-    "--lineTrace:off",
-    "--fieldChecks:off",
-    "--rangeChecks:on",
-    "--boundChecks:on",
-    "--overflowChecks:on",
-    "--assertions:on",
-    "--floatChecks:off",
-    "--nanChecks:on",
-    "--infChecks:off",
-    "--opt:none",
-    "--warnings:off",
-    "--hints:off",
-    "--threadanalysis:off",
-    "--verbosity:0",
-    #"--cc:ucc",
-  ]
-
-  #let opts = run.compilerOptions.toArgs
-  #echo "Compiler options for " & run.id & ": " & $opts
-
-  #args.add(opts)
-
-  args.add(@[
-    "compile",
-    "--run",
-    runFile
-  ])
-
-  #var foo = runInPen(playPath, chrootPath, cmd = args)
-
-  #if output.len > 1000:
-  #  run.result = Error
-  ##  run.output = "Output too long..."
-  #else:
-  #  run.output = output
-  #  if code.int != 0:
-  #    run.result = Error
 
 proc execute*(self: Run, playPath: string, versionsPath: string) {.async.} =
   proc cb(event: ProcessEvent) {.async.} =
