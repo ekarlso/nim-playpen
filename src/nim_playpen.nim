@@ -1,6 +1,6 @@
 import asyncdispatch, docopt, future, jester, json, os, strutils
 
-import private/playpen, private/run, private/utils
+import private/run, private/utils
 
 const
     VERSION = "0.0.1"

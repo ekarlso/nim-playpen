@@ -1,4 +1,4 @@
-import asyncdispatch, json, os, strutils
+import asyncdispatch, future, json, os, re, sequtils, strutils
 import uuid
 
 import asyncproc
@@ -11,11 +11,13 @@ type
   RunObj* = object
     id*: string
     input*: string
-    output*: string
+    output*: seq[string]
     result*: RunResult
     code: int
     version*: string
-    compilerOptions: JsonNode
+    compilerOptions: seq[string]
+
+  InvalidRun = object of Exception
 
 var defaultOpts = %{
   "threads": %false,
@@ -23,22 +25,23 @@ var defaultOpts = %{
   "checks": %true
 }
 
+
 var executor = newAsyncExecutor()
+
 
 proc `%`*(runResult: RunResult): JsonNode =
   %($runResult)
-
 
 proc `%`*(run: Run): JsonNode =
   result = %{
     "id": %run.id,
     "input": %run.input,
     "result": %run.result,
-    "compilerOptions": run.compilerOptions
+    "compilerOptions": %run.compilerOptions.map((s: string) => (%s))
   }
 
   if run.output != nil:
-    result["output"] = %run.output
+    result["output"] = %run.output.map((s: string) => (%s))
   else:
     result["output"] = newJNull()
 
@@ -49,36 +52,30 @@ proc newRun(): Run =
     result = Run()
     uuid.uuid_generate_random(id)
     result.id = $id.toHex()
+    result.output = newSeq[string]()
+
 
 proc toRun*(node: JsonNode): Run =
   result = newRun()
 
   result.input = node["input"].str
   result.version = node["version"].str
+
+  var opts = newJArray()
+
   if node.hasKey("compilerOptions"):
-    result.compilerOptions = node["compilerOptions"]
-  else:
-    result.compilerOptions = newJObject()
+    if node["compilerOptions"].kind != JArray:
+      raise newException(InvalidRun, "Errorous run options, needs to be a array.")
 
-proc toArgs*(compilerOptions: JsonNode): seq[string] =
-  var opts = if compilerOptions != nil: compilerOptions else: newJObject()
+    opts = node["compilerOptions"]
 
-  echo opts
-
-  for k, v in defaultOpts:
-    if not opts.hasKey(k):
-      opts[k] = defaultOpts[k]
-
-  result = newSeq[string]()
-  for k, v in opts:
-    var asString: string
-    case v.kind:
-      of JBool:
-        asString = if v.bval == true: "on" else: "off"
-      else:
-        asString = v.str
-
-    result.add("--$#:$#" % [k, asString])
+  var strOpts = newSeq[string]()
+  for o in opts:
+    if o.str =~ re"^\-{1,2}[A-Za-z0-9]+([:=]|)([A-Za-z0-9]+|)$":
+      strOpts.add(o.str)
+    else:
+      raise newException(InvalidRun, "Invalid option $#" % o.str)
+  result.compilerOptions = strOpts
 
 proc playpenCmd(binPath: string, chrootPath: string): seq[string] =
   result = @[
@@ -153,8 +150,6 @@ proc execRun*(run: var Run, playPath: string, versionsPath: string) =
   #    run.result = Error
 
 proc execute*(self: Run, playPath: string, versionsPath: string) {.async.} =
-  self.output = ""
-
   proc cb(event: ProcessEvent) {.async.} =
     # Do necassary actions based on event kind.
     case event.kind:
@@ -203,7 +198,7 @@ proc execute*(self: Run, playPath: string, versionsPath: string) {.async.} =
     #"--cc:ucc",
   ])
 
-  let opts = self.compilerOptions.toArgs
+  let opts = self.compilerOptions
   echo "Compiler options for " & self.id & ": " & $opts
 
   cmd.add(opts)
