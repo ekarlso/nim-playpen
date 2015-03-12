@@ -15,7 +15,8 @@ type
     result*: RunResult
     code: int
     version*: string
-    compilerOptions: seq[string]
+    compilerOptions*: seq[string]
+    executeRun*: bool
 
   InvalidRun = object of Exception
 
@@ -30,7 +31,8 @@ proc `%`*(run: Run): JsonNode =
     "id": %run.id,
     "input": %run.input,
     "result": %run.result,
-    "compilerOptions": %run.compilerOptions.map((s: string) => (%s))
+    "compilerOptions": %run.compilerOptions.map((s: string) => (%s)),
+    "run": %run.executeRun
   }
 
   if run.output != nil:
@@ -54,6 +56,11 @@ proc toRun*(node: JsonNode): Run =
 
   var runOpts = newJArray()
 
+  if node.hasKey("run") and node["run"].kind == JBool:
+    result.executeRun = node["run"].bval
+  else:
+    result.executeRun = true
+
   if node.hasKey("compilerOptions"):
     if node["compilerOptions"].kind != JArray:
       raise newException(InvalidRun, "Errorous run options, needs to be a array.")
@@ -66,10 +73,19 @@ proc toRun*(node: JsonNode): Run =
       strOpts.add(o.str)
     else:
       raise newException(InvalidRun, "Invalid option $#" % o.str)
+
   result.compilerOptions = strOpts
+
 
 proc chrootPath*(run: Run, opts: Opts): string =
   result = joinPath(opts.versionsPath, run.version)
+
+# Return the path of the run
+proc runDir*(run: Run): string =
+  result = joinPath("/mnt/runs/", run.id.replace("-", "_"))
+
+proc runFile*(run: Run): string =
+  result = joinPath(run.runDir, "file.nim")
 
 proc playpenCmd*(run: Run, opts: Opts): seq[string] =
   result = @[
@@ -82,38 +98,17 @@ proc playpenCmd*(run: Run, opts: Opts): seq[string] =
     "--syscalls-file=whitelist",
     "--devices=/dev/urandom:r,/dev/null:w",
     "--memory-limit=128",
+    "-b" & run.runDir,
     "--"
   ]
 
-proc execute*(self: Run, options: Opts) {.async.} =
-  proc cb(event: ProcessEvent) {.async.} =
-    # Do necassary actions based on event kind.
-    case event.kind:
-      of ProcessStdout, ProcessStderr:
-        self.output.add(event.data)
-      of ProcessEnd:
-        self.code = event.code
-        self.result = if event.code == 0: Success else: Error
+proc runCmd(run: Run): seq[string] =
+  result = @[
+    "/usr/local/bin/eval.sh", run.version, run.runDir
+  ]
 
-      else: discard
-
-  let
-    runDir = joinPath("/", "mnt", "runs", self.id.replace("-", "_"))
-    runFile = joinPath(runDir, "file.nim")
-    nimPath = joinPath("/usr/local/nim/versions", self.version, "bin", "nim")
-
-  let path = joinPath(self.chrootPath(options), runDir)
-  echo ("Creating directory: " & path)
-  createDir(path)
-
-  echo "Writing snippet"
-  writeFile(joinPath(self.chrootPath(options), runFile), self.input)
-  echo("Snippet written to: " & runFile)
-
-  var cmd = self.playpenCmd(options)
-
-  cmd.add(@[
-    nimPath,
+proc writeRunOpts(run: Run) =
+  var opts = @[
     "--nimcache:/tmp", # Same as below
     "-o:/tmp/program", # Store in /tmp since it's in-memory mount by playpen
     "--lineTrace:off",
@@ -131,18 +126,44 @@ proc execute*(self: Run, options: Opts) {.async.} =
     "--threadanalysis:off",
     "--verbosity:0",
     #"--cc:ucc",
-  ])
+  ]
 
-  let compilerOptions = self.compilerOptions
-  echo "Compiler options for " & self.id & ": " & $compilerOptions
+  opts.add(run.compilerOptions)
 
-  cmd.add(compilerOptions)
+  opts.add("compile")
+  if run.executeRun:
+    opts.add("--run")
 
-  cmd.add(@[
-    "compile",
-    "--run",
-    runFile
-  ])
+  writeFile(joinPath(run.runDir, "options"), join(opts, " "))
+
+proc execute*(self: Run, options: Opts) {.async.} =
+  proc cb(event: ProcessEvent) {.async.} =
+    # Do necassary actions based on event kind.
+    case event.kind:
+      of ProcessStdout, ProcessStderr:
+        self.output.add(event.data)
+      of ProcessEnd:
+        self.code = event.code
+        self.result = if event.code == 0: Success else: Error
+      else: discard
+
+  let
+    chrootPath = joinPath(self.chrootPath(options), self.runDir)
+
+  echo ("Creating directory: " & chrootPath)
+  createDir(chrootPath)
+
+  echo ("Creating directory: " & self.runDir)
+  createDir(self.runDir)
+
+  writeFile(self.runFile, self.input)
+  echo("Snippet written to: " & self.runFile)
+
+  self.writeRunOpts
+
+  var cmd = self.playpenCmd(options)
+
+  cmd.add(self.runCmd)
 
   echo ("Calling: " & join(cmd, " "))
   executor.start()

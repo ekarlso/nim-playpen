@@ -40,3 +40,6 @@ source ~/.bashrc
 [ ! -d "nim-uuid" ] && git clone https://github.com/ekarlso/nim-uuid/
 cd nim-uuid
 nimble install -y
+
+sudo mkdir -p /mnt/runs
+sudo chown $USER /mnt/runs

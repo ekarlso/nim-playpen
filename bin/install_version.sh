@@ -13,4 +13,6 @@ mkdir -p $TARGET
 bash $DIR/build_chroot.sh
 bash $DIR/install_nim.sh $WORKSPACE $VERSION
 
+sudo cp $DIR/eval.sh $WORKSPACE/usr/local/bin
+
 sudo mv $WORKSPACE $TARGET/$VERSION
