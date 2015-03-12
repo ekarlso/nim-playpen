@@ -1,6 +1,6 @@
 import asyncdispatch, docopt, future, jester, json, os, strutils
 
-import private/run, private/utils
+import private/run, private/utils, private/opts
 
 const
     VERSION = "0.0.1"
@@ -21,9 +21,7 @@ Options:
 
 let args = docopt(doc, version="nim-playpen " & VERSION)
 
-var
-  cfg: JsonNode
-  cfgFile: string
+var cfgFile: string
 
 if args["-c"]:
   cfgFile = $args["FILE"]
@@ -33,16 +31,10 @@ else:
 if not existsFile(cfgFile):
   quit("Config file $# not found... exiting." % cfgFile)
 
-echo("Reading config...")
-
-let cfgContents = readFile(cfgFile)
-cfg = parseJson(cfgContents)
-
+var options = newOptsFromFile(cfgFile)
 
 var
-    port = if cfg.hasKey("port") and cfg["port"].kind == JInt: cfg["port"].num else: 5000
-    staticDir =  if cfg.hasKey("static_dir"): cfg["static_dir"].str else: getCurrentDir() & "/static"
-    settings = newSettings(port = Port(port), staticDir = staticDir)
+  settings = options.jesterSettings
 
 routes:
     post "/runs":
@@ -58,7 +50,7 @@ routes:
 
         var snippetRun = node.toRun
 
-        await execute(snippetRun, cfg["playpenPath"].str, cfg["versionsPath"].str)
+        await execute(snippetRun, options)
 
         let runJson = %snippetRun
         resp(Http200, $runJson)
@@ -68,6 +60,12 @@ routes:
         resp(Http200, $version)
 
     get "/versions":
-        resp($cfg["versions"], JSON)
+      var versions = newJArray()
+
+      for kind, path in walkDir(options.versionsPath):
+        if kind == pcDir:
+          let name = extractFilename(path)
+          versions.add(%name)
+      resp($versions, JSON)
 
 runForever()

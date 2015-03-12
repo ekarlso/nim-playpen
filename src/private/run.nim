@@ -1,7 +1,7 @@
 import asyncdispatch, future, json, os, re, sequtils, strutils
 import uuid
 
-import asyncproc
+import asyncproc, opts
 
 type
   RunResult* = enum
@@ -38,15 +38,13 @@ proc `%`*(run: Run): JsonNode =
   else:
     result["output"] = newJNull()
 
-
 proc newRun(): Run =
-    var
-      id: Tuuid
-    result = Run()
-    uuid.uuid_generate_random(id)
-    result.id = $id.toHex()
-    result.output = newSeq[string]()
-
+  var
+    id: Tuuid
+  result = Run()
+  uuid.uuid_generate_random(id)
+  result.id = $id.toHex()
+  result.output = newSeq[string]()
 
 proc toRun*(node: JsonNode): Run =
   result = newRun()
@@ -54,27 +52,30 @@ proc toRun*(node: JsonNode): Run =
   result.input = node["input"].str
   result.version = node["version"].str
 
-  var opts = newJArray()
+  var runOpts = newJArray()
 
   if node.hasKey("compilerOptions"):
     if node["compilerOptions"].kind != JArray:
       raise newException(InvalidRun, "Errorous run options, needs to be a array.")
 
-    opts = node["compilerOptions"]
+    runOpts = node["compilerOptions"]
 
   var strOpts = newSeq[string]()
-  for o in opts:
+  for o in runOpts:
     if o.str =~ re"^\-{1,2}[A-Za-z0-9]+([:=]|)([A-Za-z0-9]+|)$":
       strOpts.add(o.str)
     else:
       raise newException(InvalidRun, "Invalid option $#" % o.str)
   result.compilerOptions = strOpts
 
-proc playpenCmd(binPath: string, chrootPath: string): seq[string] =
+proc chrootPath*(run: Run, opts: Opts): string =
+  result = joinPath(opts.versionsPath, run.version)
+
+proc playpenCmd*(run: Run, opts: Opts): seq[string] =
   result = @[
     findExe"sudo",
-    binPath,
-    chrootPath,
+    opts.playpenPath,
+    run.chrootPath(opts),
     "--mount-proc",
     "--user=nim",
     "--timeout=5",
@@ -84,8 +85,7 @@ proc playpenCmd(binPath: string, chrootPath: string): seq[string] =
     "--"
   ]
 
-
-proc execute*(self: Run, playPath: string, versionsPath: string) {.async.} =
+proc execute*(self: Run, options: Opts) {.async.} =
   proc cb(event: ProcessEvent) {.async.} =
     # Do necassary actions based on event kind.
     case event.kind:
@@ -98,21 +98,20 @@ proc execute*(self: Run, playPath: string, versionsPath: string) {.async.} =
       else: discard
 
   let
-    chrootPath = joinPath(versionsPath, self.version)
     runDir = joinPath("/", "mnt", "runs", self.id.replace("-", "_"))
     runFile = joinPath(runDir, "file.nim")
     nimPath = joinPath("/usr/local/nim/versions", self.version, "bin", "nim")
 
-  echo "chroot " & chrootPath
-  let path = joinPath(chrootPath, runDir)
+  let path = joinPath(self.chrootPath(options), runDir)
   echo ("Creating directory: " & path)
   createDir(path)
 
   echo "Writing snippet"
-  writeFile(joinPath(chrootPath, runFile), self.input)
+  writeFile(joinPath(self.chrootPath(options), runFile), self.input)
   echo("Snippet written to: " & runFile)
 
-  var cmd = playpencmd(playPath, chrootPath)
+  var cmd = self.playpenCmd(options)
+
   cmd.add(@[
     nimPath,
     "--nimcache:/tmp", # Same as below
@@ -134,10 +133,10 @@ proc execute*(self: Run, playPath: string, versionsPath: string) {.async.} =
     #"--cc:ucc",
   ])
 
-  let opts = self.compilerOptions
-  echo "Compiler options for " & self.id & ": " & $opts
+  let compilerOptions = self.compilerOptions
+  echo "Compiler options for " & self.id & ": " & $compilerOptions
 
-  cmd.add(opts)
+  cmd.add(compilerOptions)
 
   cmd.add(@[
     "compile",
