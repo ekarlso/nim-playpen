@@ -66,6 +66,6 @@ routes:
         if kind == pcDir:
           let name = extractFilename(path)
           versions.add(%name)
-      resp($versions, JSON)
+      resp($(%{"default": %"devel", "available": versions}), JSON)
 
 runForever()
