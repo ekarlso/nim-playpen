@@ -124,7 +124,7 @@ proc exec*(self: AsyncExecutor,
       else:
         break
 
-    await sleepAsync(1000)
+    await sleepAsync(50)
 
 when isMainModule:
   import os
