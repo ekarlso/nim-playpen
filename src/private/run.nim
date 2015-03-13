@@ -141,7 +141,13 @@ proc execute*(self: Run, options: Opts) {.async.} =
     # Do necassary actions based on event kind.
     case event.kind:
       of ProcessStdout, ProcessStderr:
-        self.output.add(event.data)
+        if self.output.len > 1000:
+          self.output = @["Output too long."]
+          killProcess(event.threadId)
+          discard
+        else:
+          self.output.add(event.data)
+
       of ProcessEnd:
         self.code = event.code
         self.result = if event.code == 0: Success else: Error
@@ -166,5 +172,7 @@ proc execute*(self: Run, options: Opts) {.async.} =
   cmd.add(self.runCmd)
 
   echo ("Calling: " & join(cmd, " "))
-  executor.start()
-  await executor.exec(findExe("sudo"), progress = cb, args = cmd)
+  #executor.start()
+  var thrId = getThreadId(executor)
+
+  await executor.exec(thrId, findExe("sudo"), progress = cb, args = cmd)
