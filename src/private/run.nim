@@ -1,18 +1,15 @@
-import asyncdispatch, future, json, os, re, sequtils, strutils
+import asyncdispatch, future, json, os, osproc, re, sequtils, streams, strutils
 import uuid
 
-import asyncproc, opts
+import opts
 
 type
-  RunResult* = enum
-    Success = 0, Error = 1
-
   Run = ref RunObj
   RunObj* = object
     id*: string
     input*: string
     output*: seq[string]
-    result*: RunResult
+    error*: string
     code: int
     version*: string
     compilerOptions*: seq[string]
@@ -20,17 +17,11 @@ type
 
   InvalidRun = object of Exception
 
-var executor = newAsyncExecutor()
-
-
-proc `%`*(runResult: RunResult): JsonNode =
-  %($runResult)
 
 proc `%`*(run: Run): JsonNode =
   result = %{
     "id": %run.id,
     "input": %run.input,
-    "result": %run.result,
     "compilerOptions": %run.compilerOptions.map((s: string) => (%s)),
     "run": %run.executeRun
   }
@@ -39,6 +30,8 @@ proc `%`*(run: Run): JsonNode =
     result["output"] = %run.output.map((s: string) => (%s))
   else:
     result["output"] = newJNull()
+
+  result["error"] = if run.error != nil: %run.error else: newJNull()
 
 proc newRun(): Run =
   var
@@ -136,17 +129,11 @@ proc writeRunOpts(run: Run) =
 
   writeFile(joinPath(run.runDir, "options"), join(opts, " "))
 
-proc execute*(self: Run, options: Opts) {.async.} =
-  proc cb(event: ProcessEvent) {.async.} =
-    # Do necassary actions based on event kind.
-    case event.kind:
-      of ProcessStdout, ProcessStderr:
-        self.output.add(event.data)
-      of ProcessEnd:
-        self.code = event.code
-        self.result = if event.code == 0: Success else: Error
-      else: discard
+proc killIt*(pid: int) =
+  let cmd = @[findExe"sudo", "kill", "-9", $pid]
+  discard execCmdEx(join(cmd, " "))
 
+proc execute*(self: Run, options: Opts) {.async.} =
   let
     chrootPath = joinPath(self.chrootPath(options), self.runDir)
 
@@ -166,5 +153,27 @@ proc execute*(self: Run, options: Opts) {.async.} =
   cmd.add(self.runCmd)
 
   echo ("Calling: " & join(cmd, " "))
-  executor.start()
-  await executor.exec(findExe("sudo"), progress = cb, args = cmd)
+  let process = startProcess(findExe("sudo"), args = cmd)
+
+  while true:
+    if process.running:
+      var processes = @[process]
+      let readable: int = select(processes, 1)
+
+      if readable == 1:
+        if self.output.len > 10000:
+          self.error = "Request $# got too large output" % self.id
+          break
+
+        let line = process.outputStream.readLine()
+        self.output.add($line)
+      else:
+        await sleepAsync(50)
+    else:
+      break
+
+  self.code = process.peekExitCode
+  if self.error == nil:
+    self.error = process.errorStream.readLine
+  if process != nil:
+    process.close()
